@@ -119,6 +119,14 @@ def main(input_file: str, batch_size: int, not_found_file: str, invalid_file: st
         save_subscriptions(not_found_file, not_found_subs)
         save_subscriptions(invalid_file, invalid_subs)
 
+        # Use the resource_graph_client to get PostgreSQL servers for each subscription ID
+        for sub_id, resource_group in subscription_ids:
+            servers = get_postgresql_servers(resource_graph_client, sub_id, resource_group)
+            output.append(servers)
+
+    # Do something with the output here, e.g. print it or save it to a file
+    print(output)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process Azure subscriptions.')
