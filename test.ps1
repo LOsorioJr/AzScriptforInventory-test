@@ -22,6 +22,26 @@ function Get-PostgreSqlServers {
     return Search-AzGraph -Query $queryString
 }
 
+# Function to append data to CSV
+function Append-ToCSV {
+    param (
+        [Parameter(Mandatory = $true)]
+        [PSObject]$data,
+
+        [Parameter(Mandatory = $true)]
+        [string]$outputFilePath
+    )
+
+    # Check if the file exists
+    if (Test-Path -Path $outputFilePath -PathType Leaf) {
+        # Don't write the header again
+        $data | Export-Csv -Path $outputFilePath -Append -NoTypeInformation
+    }
+    else {
+        $data | Export-Csv -Path $outputFilePath -NoTypeInformation
+    }
+}
+
 # Function to import data from CSV, execute query for each row and export results to a CSV
 function Export-PostgreSqlServersToCsv {
     param (
@@ -37,15 +57,24 @@ function Export-PostgreSqlServersToCsv {
 
     # prepare the output data
     $results = @()
+    $batchSize = 1000
 
     # iterate through each row in the csv
     foreach($row in $csvData){
         # append to results
         $results += Get-PostgreSqlServers -subscriptionName $row.SubscriptionName -resourceGroupName $row.ResourceGroupName
+
+        # if results size is 1000 or more, append to the CSV file and clear results
+        if($results.Count -ge $batchSize){
+            Append-ToCSV -data $results -outputFilePath $outputFilePath
+            $results = @()
+        }
     }
 
-    # export the results to a csv file
-    $results | Export-Csv -Path $outputFilePath -NoTypeInformation
+    # export the remaining results to the csv file
+    if($results.Count -gt 0){
+        Append-ToCSV -data $results -outputFilePath $outputFilePath
+    }
 }
 
 # calling the function
