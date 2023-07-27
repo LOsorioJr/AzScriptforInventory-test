@@ -1,6 +1,6 @@
 import argparse
 import logging
-import pandas as pd
+import csv
 from typing import List, Tuple, Dict, Any
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resourcegraph import ResourceGraphClient
@@ -9,20 +9,36 @@ from azure.mgmt.subscription import SubscriptionClient
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-def get_subscription_ids(batch: List[Dict[str, str]], sub_client) -> Tuple[
-    List[Tuple[str, str]], List[str], List[str]]:
-    subscription_ids = []
-    not_found_subs = []
-    invalid_subs = []
-    for row in batch:
-        sub_id = get_subscription_id(sub_client, row['SubscriptionName'])
-        if sub_id is None:
-            not_found_subs.append(row['SubscriptionName'])
-        elif not is_valid_guid(sub_id):
-            invalid_subs.append(row['SubscriptionName'])
-        else:
-            subscription_ids.append((sub_id, row['ResourceGroupName']))
-    return subscription_ids, not_found_subs, invalid_subs
+def prepare_batches(data: List[Dict[str, str]], batch_size: int) -> List[List[Dict[str, str]]]:
+    """
+    Splits the data into batches of a given size.
+    """
+    batches = []
+    for i in range(0, len(data), batch_size):
+        batch = data[i:i + batch_size]
+        batches.append(batch)
+    return batches
+
+def save_subscriptions(filename: str, subscriptions: List[str]) -> None:
+    """
+    Saves a list of subscriptions to a CSV file.
+    """
+    with open(filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['SubscriptionName'])
+        for subscription in subscriptions:
+            writer.writerow([subscription])
+
+def get_subscription_id(sub_client, subscription_name: str) -> Optional[str]:
+    """
+    Retrieves the subscription ID for a given subscription name.
+    """
+    try:
+        subscription = sub_client.subscriptions.get(subscription_name)
+        return subscription.subscription_id
+    except Exception as e:
+        logging.error(f"Error getting subscription ID for {subscription_name}: {e}")
+        return None
 
 def get_postgresql_servers(client, subscription_id: str) -> Any:
     """
