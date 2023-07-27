@@ -42,6 +42,20 @@ function Append-ToCSV {
     }
 }
 
+# Function to get the subscription ID based on a subscription name
+function Get-SubscriptionId {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$subscriptionName
+    )
+
+    # Get the subscription
+    $subscription = Get-AzSubscription -SubscriptionName $subscriptionName
+
+    # Return the subscription ID
+    return $subscription.Id
+}
+
 # Function to import data from CSV, execute query for each row and export results to a CSV
 function Export-PostgreSqlServersToCsv {
     param (
@@ -69,8 +83,14 @@ function Export-PostgreSqlServersToCsv {
     # iterate through each row in the csv in the specified range
     for ($i = $startIndex; $i -le $endIndex; $i++){
         $row = $csvData[$i]
+        if ([string]::IsNullOrWhiteSpace($row.SubscriptionName)) {
+            Write-Warning "SubscriptionName is empty for row $i, skipping"
+            continue
+        }
+        # Get subscription ID
+        $subscriptionId = Get-SubscriptionId -subscriptionName $row.SubscriptionName
         # append to results
-        $results += Get-PostgreSqlServers -subscriptionId $row.SubscriptionId -resourceGroupName $row.ResourceGroupName
+        $results += Get-PostgreSqlServers -subscriptionId $subscriptionId -resourceGroupName $row.ResourceGroupName
         Append-ToCSV -data $results -outputFilePath $outputFilePath
         $results = @()
 
