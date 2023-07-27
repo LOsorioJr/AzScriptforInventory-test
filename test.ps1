@@ -2,20 +2,20 @@
 function Get-PostgreSqlServers {
     param (
         [Parameter(Mandatory = $true)]
-        [string]$subscriptionName,
+        [string]$subscriptionId,
         
         [string]$resourceGroupName
     )
 
     # Set the context to the specified subscription
-    Set-AzContext -Subscription $subscriptionName
+    Set-AzContext -Subscription $subscriptionId
 
     # prepare the query string
     if($resourceGroupName){
-        $queryString = "where type =~ 'Microsoft.DbforPostgreSQL/servers' and resourceGroup == '$resourceGroupName'"
+        $queryString = "where type =~ 'Microsoft.DbforPostgreSQL/servers' and resourceGroup == '$resourceGroupName' | project name, type, location, resourceGroup"
     }
     else {
-        $queryString = "where type =~ 'Microsoft.DbforPostgreSQL/servers'"
+        $queryString = "where type =~ 'Microsoft.DbforPostgreSQL/servers' | project name, type, location, resourceGroup"
     }
 
     # execute the resource graph query
@@ -70,7 +70,7 @@ function Export-PostgreSqlServersToCsv {
     for ($i = $startIndex; $i -le $endIndex; $i++){
         $row = $csvData[$i]
         # append to results
-        $results += Get-PostgreSqlServers -subscriptionName $row.SubscriptionName -resourceGroupName $row.ResourceGroupName
+        $results += Get-PostgreSqlServers -subscriptionId $row.SubscriptionId -resourceGroupName $row.ResourceGroupName
         Append-ToCSV -data $results -outputFilePath $outputFilePath
         $results = @()
 
