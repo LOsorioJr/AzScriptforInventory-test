@@ -49,33 +49,52 @@ function Export-PostgreSqlServersToCsv {
         [string]$inputFilePath,
         
         [Parameter(Mandatory = $true)]
-        [string]$outputFilePath
+        [string]$outputFilePath,
+        
+        [Parameter(Mandatory = $true)]
+        [int]$startIndex,
+        
+        [Parameter(Mandatory = $true)]
+        [int]$endIndex
     )
 
     # import CSV file
     $csvData = Import-Csv -Path $inputFilePath
 
-    # prepare the output data
+    # Prepare the output data
     $results = @()
-    $batchSize = 1000
+    $totalCount = $endIndex - $startIndex + 1
+    $currentCount = 0
 
-    # iterate through each row in the csv
-    foreach($row in $csvData){
+    # iterate through each row in the csv in the specified range
+    for ($i = $startIndex; $i -le $endIndex; $i++){
+        $row = $csvData[$i]
         # append to results
         $results += Get-PostgreSqlServers -subscriptionName $row.SubscriptionName -resourceGroupName $row.ResourceGroupName
-
-        # if results size is 1000 or more, append to the CSV file and clear results
-        if($results.Count -ge $batchSize){
-            Append-ToCSV -data $results -outputFilePath $outputFilePath
-            $results = @()
-        }
-    }
-
-    # export the remaining results to the csv file
-    if($results.Count -gt 0){
         Append-ToCSV -data $results -outputFilePath $outputFilePath
+        $results = @()
+
+        # increment the current count and display the progress bar
+        $currentCount++
+        $progress = ($currentCount / $totalCount) * 100
+        Write-Progress -Activity "Searching for PostgreSQL servers" -Status "$progress% Complete:" -PercentComplete $progress
     }
 }
 
-# calling the function
-Export-PostgreSqlServersToCsv -inputFilePath 'C:\path\to\your\input.csv' -outputFilePath 'C:\path\to\your\output.csv'
+# import CSV file
+$csvData = Import-Csv -Path 'C:\path\to\your\input.csv'
+
+# Determine batch size and total number of batches
+$batchSize = 1000
+$totalBatches = [math]::Ceiling($csvData.Count / $batchSize)
+
+# Iterate through each batch and call Export-PostgreSqlServersToCsv
+for ($i = 0; $i -lt $totalBatches; $i++) {
+    $startIndex = $i * $batchSize
+    $endIndex = $startIndex + $batchSize - 1
+    if ($endIndex -gt $csvData.Count - 1) {
+        $endIndex = $csvData.Count - 1
+    }
+
+    Export-PostgreSqlServersToCsv -inputFilePath 'C:\path\to\your\input.csv' -outputFilePath 'C:\path\to\your\output.csv' -startIndex $startIndex -endIndex $endIndex
+}
