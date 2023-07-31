@@ -1,0 +1,63 @@
+import csv
+import os
+import sys
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.resource import SubscriptionClient
+from azure.mgmt.containerservice import ContainerServiceClient
+from tqdm import tqdm
+
+def get_subscription_id(subscription_name):
+    credential = DefaultAzureCredential()
+    subscription_client = SubscriptionClient(credential)
+    subscription_id = None
+    for subscription in subscription_client.subscriptions.list():
+        if subscription.display_name == subscription_name:
+            subscription_id = subscription.subscription_id
+            break
+    return subscription_id
+
+def get_aks_clusters(subscription_id, resource_group_name=None):
+    credential = DefaultAzureCredential()
+    aks_client = ContainerServiceClient(credential, subscription_id)
+    if resource_group_name:
+        aks_clusters = aks_client.managed_clusters.list_by_resource_group(resource_group_name)
+    else:
+        aks_clusters = aks_client.managed_clusters.list()
+    return aks_clusters
+
+def main():
+    with open('subscriptions.csv', 'r') as f:
+        reader = csv.DictReader(f)
+        subscriptions = list(reader)
+
+    not_found = []
+    aks_clusters = []
+    for subscription in tqdm(subscriptions, desc="Processing Subscriptions"):
+        subscription_id = get_subscription_id(subscription['SubscriptionName'])
+        if not subscription_id:
+            not_found.append(subscription)
+            continue
+        clusters = get_aks_clusters(subscription_id, subscription.get('ResourceGroupName'))
+        for cluster in clusters:
+            if cluster.kubernetes_version < '1.25.0':
+                aks_clusters.append({
+                    'ServerName': cluster.name,
+                    'Subscription': subscription['SubscriptionName'],
+                    'ResourceGroup': cluster.resource_group,
+                    'Location': cluster.location,
+                    'Type': cluster.type,
+                    'SKU': cluster.sku.name
+                })
+
+    with open('aks_clusters.csv', 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['ServerName', 'Subscription', 'ResourceGroup', 'Location', 'Type', 'SKU'])
+        writer.writeheader()
+        writer.writerows(aks_clusters)
+
+    with open('not_found.csv', 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['SubscriptionName', 'ResourceGroupName'])
+        writer.writeheader()
+        writer.writerows(not_found)
+
+if __name__ == "__main__":
+    main()
