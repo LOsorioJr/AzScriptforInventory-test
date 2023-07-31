@@ -9,7 +9,7 @@ def get_subscription_id(subscription_name):
     credential = DefaultAzureCredential()
     subscription_client = SubscriptionClient(credential)
     subscription_id = None
-    for subscription in tqdm(subscription_client.subscriptions.list(), desc="Processing Subscriptions"):
+    for subscription in tqdm(subscription_client.subscriptions.list(max_results=100), desc="Processing Subscriptions"):
         if subscription.display_name == subscription_name:
             subscription_id = subscription.subscription_id
             break
@@ -22,9 +22,9 @@ def get_aks_clusters(subscription_id, resource_group_name=None):
     aks_clusters = []
     try:
         if resource_group_name:
-            aks_clusters = list(aks_client.managed_clusters.list_by_resource_group(resource_group_name))
+            aks_clusters = list(aks_client.managed_clusters.list_by_resource_group(resource_group_name, max_results=100))
         else:
-            aks_clusters = list(aks_client.managed_clusters.list())
+            aks_clusters = list(aks_client.managed_clusters.list(max_results=100))
     except Exception as e:
         print(f"Error getting AKS clusters for resource group '{resource_group_name}': {e}")
     return aks_clusters
@@ -32,11 +32,8 @@ def get_aks_clusters(subscription_id, resource_group_name=None):
 
 def get_resource_group_from_id(resource_id):
     resource_id_parts = resource_id.split('/')
-    try:
-        resource_group_index = resource_id_parts.index('resourceGroups') + 1
-        return resource_id_parts[resource_group_index]
-    except ValueError:
-        return None
+    resource_group = resource_id_parts[resource_id_parts.index('resourceGroups') + 1]
+    return resource_group
 
 
 def main():
@@ -59,14 +56,15 @@ def main():
                 'ResourceGroup': get_resource_group_from_id(cluster.id),
                 'Location': cluster.location,
                 'Type': cluster.type,
-                'SKU': cluster.sku.name
+                'SKU': cluster.sku.name,
+                'KubernetesVersion': cluster.kubernetes_version
             }
             for cluster in clusters
             if cluster.kubernetes_version < '1.25.0'
         ])
 
     with open('aks_clusters.csv', 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['ServerName', 'Subscription', 'ResourceGroup', 'Location', 'Type', 'SKU'])
+        writer = csv.DictWriter(f, fieldnames=['ServerName', 'Subscription', 'ResourceGroup', 'Location', 'Type', 'SKU', 'KubernetesVersion'])
         writer.writeheader()
         writer.writerows(aks_clusters)
 
