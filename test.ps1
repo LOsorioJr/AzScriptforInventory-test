@@ -1,120 +1,56 @@
-# Function to get the PostgreSQL servers for a given subscription and optionally a resource group
-function Get-PostgreSqlServers {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$subscriptionId,
-        
-        [string]$resourceGroupName
-    )
+import csv
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.postgresql import PostgreSQLManagementClient
 
-    # Set the context to the specified subscription
-    Set-AzContext -Subscription $subscriptionId
+def get_credentials():
+    # This will use the default credentials from your local machine
+    return DefaultAzureCredential()
 
-    # prepare the query string
-    if($resourceGroupName){
-        $queryString = "where type =~ 'Microsoft.DbforPostgreSQL/servers' and resourceGroup == '$resourceGroupName' | project name, type, location, resourceGroup"
-    }
-    else {
-        $queryString = "where type =~ 'Microsoft.DbforPostgreSQL/servers' | project name, type, location, resourceGroup"
-    }
+def get_resource_client(credentials, subscription_id):
+    return ResourceManagementClient(credentials, subscription_id)
 
-    # execute the resource graph query
-    return Search-AzGraph -Query $queryString
-}
+def get_postgresql_client(credentials, subscription_id):
+    return PostgreSQLManagementClient(credentials, subscription_id)
 
-# Function to append data to CSV
-function Append-ToCSV {
-    param (
-        [Parameter(Mandatory = $true)]
-        [PSObject]$data,
+def get_subscriptions_and_resource_groups_from_csv(file_path):
+    with open(file_path, 'r') as file:
+        reader = csv.DictReader(file)
+        return list(reader)
 
-        [Parameter(Mandatory = $true)]
-        [string]$outputFilePath
-    )
+def get_postgresql_servers(postgresql_client, resource_group=None):
+    if resource_group:
+        return postgresql_client.servers.list_by_resource_group(resource_group)
+    else:
+        return postgresql_client.servers.list()
 
-    # Check if the file exists
-    if (Test-Path -Path $outputFilePath -PathType Leaf) {
-        # Don't write the header again
-        $data | Export-Csv -Path $outputFilePath -Append -NoTypeInformation
-    }
-    else {
-        $data | Export-Csv -Path $outputFilePath -NoTypeInformation
-    }
-}
+def write_to_csv(servers, file_path):
+    with open(file_path, 'w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=['Server Name', 'Subscription', 'Resource Group', 'Location', 'Type', 'SKU'])
+        writer.writeheader()
+        for server in servers:
+            writer.writerow({
+                'Server Name': server.name,
+                'Subscription': server.id.split('/')[2],
+                'Resource Group': server.id.split('/')[4],
+                'Location': server.location,
+                'Type': server.type,
+                'SKU': server.sku.name
+            })
 
-# Function to get the subscription ID based on a subscription name
-function Get-SubscriptionId {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$subscriptionName
-    )
+def main():
+    credentials = get_credentials()
+    subscriptions_and_resource_groups = get_subscriptions_and_resource_groups_from_csv('subscriptions.csv')
+    servers = []
 
-    # Get the subscription
-    $subscription = Get-AzSubscription -SubscriptionName $subscriptionName
+    for item in subscriptions_and_resource_groups:
+        subscription_id = item['SubscriptionName']
+        resource_group = item.get('ResourceGroupName')
 
-    # Return the subscription ID
-    return $subscription.Id
-}
+        postgresql_client = get_postgresql_client(credentials, subscription_id)
+        servers.extend(get_postgresql_servers(postgresql_client, resource_group))
 
-# Function to import data from CSV, execute query for each row and export results to a CSV
-function Export-PostgreSqlServersToCsv {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$inputFilePath,
-        
-        [Parameter(Mandatory = $true)]
-        [string]$outputFilePath,
-        
-        [Parameter(Mandatory = $true)]
-        [int]$startIndex,
-        
-        [Parameter(Mandatory = $true)]
-        [int]$endIndex
-    )
+    write_to_csv(servers, 'output.csv')
 
-    # import CSV file
-    $csvData = Import-Csv -Path $inputFilePath
-
-    # Prepare the output data
-    $results = @()
-    $totalCount = $endIndex - $startIndex + 1
-    $currentCount = 0
-
-    # iterate through each row in the csv in the specified range
-    for ($i = $startIndex; $i -le $endIndex; $i++){
-        $row = $csvData[$i]
-        if ([string]::IsNullOrWhiteSpace($row.SubscriptionName)) {
-            Write-Warning "SubscriptionName is empty for row $i, skipping"
-            continue
-        }
-        # Get subscription ID
-        $subscriptionId = Get-SubscriptionId -subscriptionName $row.SubscriptionName
-        # append to results
-        $results += Get-PostgreSqlServers -subscriptionId $subscriptionId -resourceGroupName $row.ResourceGroupName
-        Append-ToCSV -data $results -outputFilePath $outputFilePath
-        $results = @()
-
-        # increment the current count and display the progress bar
-        $currentCount++
-        $progress = ($currentCount / $totalCount) * 100
-        Write-Progress -Activity "Searching for PostgreSQL servers" -Status "$progress% Complete:" -PercentComplete $progress
-    }
-}
-
-# import CSV file
-$csvData = Import-Csv -Path 'C:\path\to\your\input.csv'
-
-# Determine batch size and total number of batches
-$batchSize = 1000
-$totalBatches = [math]::Ceiling($csvData.Count / $batchSize)
-
-# Iterate through each batch and call Export-PostgreSqlServersToCsv
-for ($i = 0; $i -lt $totalBatches; $i++) {
-    $startIndex = $i * $batchSize
-    $endIndex = $startIndex + $batchSize - 1
-    if ($endIndex -gt $csvData.Count - 1) {
-        $endIndex = $csvData.Count - 1
-    }
-
-    Export-PostgreSqlServersToCsv -inputFilePath 'C:\path\to\your\input.csv' -outputFilePath 'C:\path\to\your\output.csv' -startIndex $startIndex -endIndex $endIndex
-}
+if __name__ == "__main__":
+    main()
