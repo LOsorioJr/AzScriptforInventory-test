@@ -1,7 +1,7 @@
 import csv
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
-from azure.mgmt.postgresql import PostgreSQLManagementClient
+from azure.mgmt.rdbms import postgresql
 
 def get_credentials():
     # This will use the default credentials from your local machine
@@ -11,7 +11,7 @@ def get_resource_client(credentials, subscription_id):
     return ResourceManagementClient(credentials, subscription_id)
 
 def get_postgresql_client(credentials, subscription_id):
-    return PostgreSQLManagementClient(credentials, subscription_id)
+    return postgresql.PostgreSQLManagementClient(credentials, subscription_id)
 
 def get_subscriptions_and_resource_groups_from_csv(file_path):
     with open(file_path, 'r') as file:
